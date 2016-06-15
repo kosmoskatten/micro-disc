@@ -2,12 +2,7 @@ module Main
     ( main
     ) where
 
-import Options.Applicative
-
-data Options = Options
-    { natsUri :: !String
-    , logger  :: !(Maybe String)
-    }
+import Network.Discovery (getOptions, startDiscoveryService)
 
 main :: IO ()
-main = putStrLn "kk"
+main = startDiscoveryService =<< getOptions
