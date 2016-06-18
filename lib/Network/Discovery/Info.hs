@@ -24,6 +24,10 @@ type IPAddress = Text
 type PortNum = Int
 
 data Info = Info
+    { service    :: !Text
+    , version    :: !Text
+    , interfaces :: ![Interface]
+    } deriving (Generic, Eq, Show)
 
 data Interface = Interface
     { role     :: !Text
@@ -37,7 +41,7 @@ data Interface = Interface
       -- ^ The endport port number for the interface.
     , payload  :: !Payload
       -- ^ The type of payload transported over this interface.
-    } deriving (Generic, Show)
+    } deriving (Generic, Eq, Show)
 
 data Protocol
     = SCTP
@@ -46,14 +50,17 @@ data Protocol
     | HTTP
     | HTTPS
     | Protocol !Text
-    deriving Show
+    deriving (Eq, Show)
 
 data Payload
     = HTML
     | JSON
     | XML
     | Payload !Text
-    deriving Show
+    deriving (Eq, Show)
+
+instance FromJSON Info
+instance ToJSON Info
 
 instance FromJSON Interface
 instance ToJSON Interface
@@ -66,7 +73,7 @@ instance FromJSON Protocol where
         | "HTTP"  == T.toUpper s = pure HTTP
         | "HTTPS" == T.toUpper s = pure HTTPS
         | otherwise              = pure $ Protocol s
-    parseJSON invalid    = typeMismatch "Protocol" invalid
+    parseJSON invalid = typeMismatch "Protocol" invalid
 
 instance ToJSON Protocol where
     toJSON SCTP         = String "SCTP"
@@ -79,4 +86,13 @@ instance ToJSON Protocol where
 instance FromJSON Payload where
     parseJSON (String s)
         | "HTML" == T.toUpper s = pure HTML
-        | "JSON" ==
+        | "JSON" == T.toUpper s = pure JSON
+        | "XML"  == T.toUpper s = pure XML
+        | otherwise             = pure $ Payload s
+    parseJSON invalid = typeMismatch "Payload" invalid
+
+instance ToJSON Payload where
+    toJSON HTML        = String "HTML"
+    toJSON JSON        = String "JSON"
+    toJSON XML         = String "XML"
+    toJSON (Payload x) = String x
