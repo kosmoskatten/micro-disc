@@ -20,6 +20,7 @@ library
                        Network.Discovery.Info
                        Network.Discovery.Registry
   other-modules:       Network.Discovery.Options
+                       Network.Discovery.Procedures
   build-depends:       base >=4.8 && <5
                       , aeson
                       , async
