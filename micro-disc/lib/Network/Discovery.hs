@@ -23,6 +23,7 @@ import qualified Data.ByteString.Char8 as BS
 import Network.Discovery.Info (Info (..))
 import Network.Discovery.Options (Options (..), getOptions)
 import Network.Discovery.Procedures ( register
+                                    , unregister
                                     , discover
                                     , ping
                                     , pingServices
@@ -45,6 +46,9 @@ natsConnected conn = do
 
     -- Subscribe to service registrations.
     void $ subAsyncJson' conn "service.register.*" $ register conn registry
+
+    -- Subscribe to service unregistrations.
+    void $ subAsync' conn "service.unregister.*" $ unregister conn registry
 
     -- Subscribe to service discovery.
     void $ subAsyncJson' conn "service.discover.*" $ discover conn registry
