@@ -17,7 +17,6 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Network.Discovery
-                       Network.Discovery.Info
                        Network.Discovery.Registry
   other-modules:       Network.Discovery.Options
                        Network.Discovery.Procedures
@@ -25,6 +24,7 @@ library
                       , aeson
                       , async
                       , bytestring
+                      , disc-info
                       , fast-logger
                       , nats-client
                       , optparse-applicative
@@ -47,18 +47,15 @@ executable micro-disc
 
 test-suite micro-disc-tests
   main-is:             Main.hs
-  other-modules:       Network.Discovery.InfoProps
   type:                exitcode-stdio-1.0
   build-depends:       base >= 4.8 && <5
-                     , aeson
                      , HUnit
+                     , disc-info
                      , micro-disc
                      , stm
                      , test-framework
                      , test-framework-hunit
-                     , test-framework-quickcheck2
                      , text
-                     , QuickCheck
   hs-source-dirs:      tests
   default-language:    Haskell2010
   ghc-options:        -Wall
