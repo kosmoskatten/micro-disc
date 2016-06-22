@@ -4,6 +4,8 @@ module Network.Discovery.RegistryTests
     , reRegisterOneService
     , discoverNonExistService
     , discoverExistingService
+    , forcefullyRemoveService
+    , conditionallyRemoveService
     ) where
 
 import Control.Concurrent.STM (atomically, newTVarIO)
@@ -17,6 +19,8 @@ import Network.Discovery.Registry ( Entry (..)
                                   , toList
                                   , discoverService
                                   , registerService
+                                  , removeService
+                                  , removeServiceIf
                                   )
 
 -- | Register one service. Once the registrations is made it shall
@@ -87,7 +91,7 @@ discoverNonExistService = do
 -- service shall be returned immediately.
 discoverExistingService :: Assertion
 discoverExistingService = do
-    let info = mkInfo "my-service"
+    let info = mkInfo "my-serv"
     reg <- newTVarIO empty
 
     -- Register the service.
@@ -98,6 +102,45 @@ discoverExistingService = do
 
     -- Compare Info.
     assertEqual "Info shall be equal" info disc
+
+-- | Forcefully remove a registered service. No care is taken about
+-- generations.
+forcefullyRemoveService :: Assertion
+forcefullyRemoveService = do
+    let info = mkInfo "my-serv"
+    reg <- newTVarIO empty
+
+    -- Register the service.
+    void $ atomically $ registerService "my-serv" info reg
+
+    -- And remove it.
+    atomically $ removeService "my-serv" reg
+
+    xs <- atomically $ toList reg
+    assertEqual "Shall be empty list" [] xs
+
+-- | Conditionally remove a registered service. The condition is expecting
+-- a specific generation count for the removal to take place.
+conditionallyRemoveService :: Assertion
+conditionallyRemoveService = do
+    let info = mkInfo "my-serv"
+    reg <- newTVarIO empty
+
+    -- Register the service. Its generation count will be 1.
+    void $ atomically $ registerService "my-serv" info reg
+
+    -- Try remove it with an "incorrect" generation count. Shall
+    -- not succeed.
+    succ' <- atomically $ removeServiceIf (== 2) "my-serv" reg
+    assertEqual "Shall not have succeeded" False succ'
+    xs <- atomically $ toList reg
+    assertEqual "Shall be list of length 1" 1 (length xs)
+
+    -- Remove with a correct generation count. Shall succeed.
+    succ'' <- atomically $ removeServiceIf (== 1) "my-serv" reg
+    assertEqual "Shall have succeeded" True succ''
+    xs' <- atomically $ toList reg
+    assertEqual "Shall be empty list" [] xs'
 
 mkInfo :: Text -> Info
 mkInfo serv =

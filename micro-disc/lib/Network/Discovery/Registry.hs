@@ -4,10 +4,13 @@ module Network.Discovery.Registry
     , empty
     , registerService
     , discoverService
+    , removeService
+    , removeServiceIf
     , toList
     ) where
 
-import Control.Concurrent.STM (STM, TVar, readTVar, writeTVar)
+import Control.Concurrent.STM (STM, TVar, modifyTVar, readTVar, writeTVar)
+import Control.Monad (when)
 import Data.ByteString (ByteString)
 import Data.HashMap.Lazy (HashMap)
 import Network.Nats (Topic)
@@ -74,6 +77,24 @@ discoverService service replyTo reg = do
         Nothing             -> do
             writeTVar reg $ HashMap.insert service (Pending [replyTo]) reg'
             return Nothing
+
+-- | Remove a service.
+removeService :: Service -> TVar Registry -> STM ()
+removeService service reg = modifyTVar reg $ HashMap.delete service
+
+-- | Remove a service if the predicate evaluates to True. The
+-- predicate is given the generation count of the entry to remove. If
+-- no entry is found the function will return False, if an entry is found
+-- the value of the predicate is returned.
+removeServiceIf :: (Int -> Bool) -> Service -> TVar Registry -> STM Bool
+removeServiceIf g service reg = do
+    reg' <- readTVar reg
+    case HashMap.lookup service reg' of
+        Just (Entry gen _) -> do
+            let result = g gen
+            when result $ writeTVar reg $ HashMap.delete service reg'
+            return result
+        _                  -> return False
 
 -- | Export the registry to a list.
 toList :: TVar Registry -> STM [(ByteString, Entry)]

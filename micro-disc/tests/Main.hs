@@ -9,6 +9,8 @@ import Network.Discovery.RegistryTests ( registerOneService
                                        , reRegisterOneService
                                        , discoverNonExistService
                                        , discoverExistingService
+                                       , forcefullyRemoveService
+                                       , conditionallyRemoveService
                                        )
 
 main :: IO ()
@@ -21,5 +23,8 @@ testSuite =
         , testCase "Re-register one service" reRegisterOneService
         , testCase "Discover a non-exist service" discoverNonExistService
         , testCase "Discover an existing service" discoverExistingService
+        , testCase "Remove a service" forcefullyRemoveService
+        , testCase "Remove a service conditionally"
+                   conditionallyRemoveService
         ]
     ]
