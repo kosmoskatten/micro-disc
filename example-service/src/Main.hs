@@ -3,7 +3,14 @@ module Main
     ( main
     ) where
 
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent.MVar ( MVar
+                               , newMVar
+                               , newEmptyMVar
+                               , putMVar
+                               , takeMVar
+                               , withMVar
+                               )
 import Control.Monad (void, forever)
 import Data.ByteString.Char8 (ByteString)
 import Data.String.Conv (toS)
@@ -24,6 +31,12 @@ import System.Environment (getArgs)
 
 import qualified Data.ByteString.Char8 as BS
 
+data Heartbeat = Heart | Die
+    deriving (Eq, Show)
+
+type Out = MVar ()
+type Kill = MVar Heartbeat
+
 main :: IO ()
 main = do
     args <- map BS.pack <$> getArgs
@@ -37,34 +50,69 @@ initService natsUri name services =
 
 natsConnected :: ByteString -> [ByteString] -> Connection -> IO ()
 natsConnected name services conn = do
+    -- Create a simple synchronized stdout writer.
+    out <- newSyncOutput
+    sPutStrLn out $ name `BS.append` " is connected to NATS."
+
+    -- Create a 'kill switch' where supervision threads can signal to
+    -- main thread to exit.
+    kill <- newKillSwitch
+
     -- First register yourselves.
     let info = Info { service = toS name
                     , version = "0.1.0"
                     , interfaces = []
                     }
+
     pubJson' conn ("service.register." `BS.append` name) info
 
     -- Subscribe to pings.
-    void $ subAsync' conn (name `BS.append` ".ping") $ handlePing conn
+    void $ subAsync' conn (name `BS.append` ".ping") $ handlePing out conn
 
     -- Discover and supervise the services.
-    mapM_ (discoverAndSupervise conn) services
+    mapM_ (discoverAndSupervise out kill conn) services
 
-    -- Just keep main thread alive.
-    forever $ threadDelay 1000000
+    waitUntilKilled kill
+    where
+      waitUntilKilled kill = do
+          h <- takeMVar kill
+          if h == Heart then waitUntilKilled kill
+                        else putStrLn "Terminating ..."
 
-discoverAndSupervise :: Connection -> ByteString -> IO ()
-discoverAndSupervise conn name = do
-    BS.putStrLn $ "Waiting to discover " `BS.append` name
+discoverAndSupervise :: Out -> Kill -> Connection -> ByteString -> IO ()
+discoverAndSupervise out kill conn name = do
+    sPutStrLn out $ "Waiting to discover " `BS.append` name
     let topic = "service.discover." `BS.append` name
     Just (JsonMsg _ _ _ info) <- requestJSON conn topic emptyJSON Infinity
-    BS.putStrLn $ "Done! Got " `BS.append` toS (show (info :: Maybe Info))
+    sPutStrLn out $ "Done! Got " `BS.append` toS (show (info :: Maybe Info))
+    void $ subAsync' conn ("service.supervise." `BS.append` name) $
+                     handleSupervision out kill name
 
-handlePing :: Connection -> NatsMsg -> IO ()
-handlePing conn (NatsMsg _ _ (Just replyTo) payload) = do
+handlePing :: Out -> Connection -> NatsMsg -> IO ()
+handlePing out conn (NatsMsg _ _ (Just replyTo) payload) = do
     pub' conn replyTo payload
-    putStrLn "Handled ping"
-handlePing _ _ = putStrLn "Ping without anywhere to pong"
+    sPutStrLn out "Handled ping"
+handlePing out _ _ = sPutStrLn out "Ping without anywhere to pong"
+
+handleSupervision :: Out -> Kill -> ByteString -> NatsMsg -> IO ()
+handleSupervision out kill name _ = do
+    sPutStrLn out $ name `BS.append` " has died."
+    putMVar kill Die
 
 emptyJSON :: [Int]
 emptyJSON = []
+
+newSyncOutput :: IO Out
+newSyncOutput = newMVar ()
+
+newKillSwitch :: IO Kill
+newKillSwitch = do
+    kill <- newEmptyMVar
+    void $ forkIO $
+        forever $ do
+            threadDelay 1000000
+            putMVar kill Heart
+    return kill
+
+sPutStrLn :: Out -> ByteString -> IO ()
+sPutStrLn sync out = withMVar sync $ const (BS.putStrLn out)
