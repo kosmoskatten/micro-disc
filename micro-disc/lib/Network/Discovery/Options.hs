@@ -7,8 +7,8 @@ import Options.Applicative
 
 data Options = Options
     { natsUri :: !String
-    , logger  :: !(Maybe String)
-    }
+    , logger  :: !(Maybe FilePath)
+    } deriving Show
 
 getOptions :: IO Options
 getOptions = execParser options

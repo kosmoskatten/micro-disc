@@ -33,11 +33,13 @@ import Network.Discovery.Registry (empty)
 startDiscoveryService :: Options -> IO ()
 startDiscoveryService opts = do
     let uri      = BS.pack $ natsUri opts
-        settings = defaultSettings { loggerSpec = StdoutLogger }
-    runNatsClient settings uri natsConnected `catch` handler
+        settings = defaultSettings { loggerSpec = toLoggerSpec opts }
+    runNatsClient settings uri natsConnected `catch` onException
 
-handler :: SomeException -> IO ()
-handler e = printf "Oops. Got '%s'\n" (show e)
+-- | Top level exception handler. Just print the content of the
+-- exception.
+onException :: SomeException -> IO ()
+onException e = printf "Oops. Got '%s'\n" (show e)
 
 natsConnected :: Connection -> IO ()
 natsConnected conn = do
@@ -67,3 +69,12 @@ natsConnected conn = do
     forever $ do
         threadDelay 5000000
         pingServices conn registry
+
+-- | From options, create a 'LoggerSpec'.
+toLoggerSpec :: Options -> LoggerSpec
+toLoggerSpec opts =
+    case logger opts of
+        Just "stdout" -> StdoutLogger
+        Just file     -> FileLogger file
+        Nothing       -> NoLogger
+
