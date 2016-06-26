@@ -20,6 +20,7 @@ import Network.Nats ( Connection
 import Text.Printf (printf)
 import qualified Data.ByteString.Char8 as BS
 
+import Network.Discovery.Context (Context (..))
 import Network.Discovery.Info (Info (..))
 import Network.Discovery.Options (Options (..), getOptions)
 import Network.Discovery.Procedures ( register
@@ -34,41 +35,42 @@ startDiscoveryService :: Options -> IO ()
 startDiscoveryService opts = do
     let uri      = BS.pack $ natsUri opts
         settings = defaultSettings { loggerSpec = toLoggerSpec opts }
-    runNatsClient settings uri natsConnected `catch` onException
+    runNatsClient settings uri (natsConnected opts) `catch` onException
 
 -- | Top level exception handler. Just print the content of the
 -- exception.
 onException :: SomeException -> IO ()
 onException e = printf "Oops. Got '%s'\n" (show e)
 
-natsConnected :: Connection -> IO ()
-natsConnected conn = do
-    -- Create the registry.
-    registry <- newTVarIO empty
+natsConnected :: Options -> Connection -> IO ()
+natsConnected opts conn' = do
+    -- Create the context.
+    context <- Context conn' opts <$> newTVarIO empty
 
     -- Subscribe to service registrations.
-    void $ subAsyncJson' conn "service.register.*" $ register conn registry
+    void $ subAsyncJson' conn' "service.register.*" $ register context
 
     -- Subscribe to service unregistrations.
-    void $ subAsync' conn "service.unregister.*" $ unregister conn registry
+    void $ subAsync' conn' "service.unregister.*" $ unregister context
 
     -- Subscribe to service discovery.
-    void $ subAsyncJson' conn "service.discover.*" $ discover conn registry
+    void $ subAsyncJson' conn' "service.discover.*" $ discover context
 
     -- Subscribe to ping sent to itself.
-    void $ subAsync' conn "micro-disc.ping" $ ping conn
+    void $ subAsync' conn' "micro-disc.ping" $ ping context
 
     -- Register itself.
     let info = Info { service    = "micro-disc"
                     , version    = "0.0.1.0"
                     , interfaces = []
                     }
-    pubJson' conn "service.register.micro-disc" info
+    pubJson' conn' "service.register.micro-disc" info
     
-    -- Every 5th second, ping all registered services.
+    -- At the interval specified by the command option 'pingFreq'
+    -- invoke the pingServices procedure.
     forever $ do
-        threadDelay 5000000
-        pingServices conn registry
+        threadDelay $ toUSec (pingFreq opts)
+        pingServices context
 
 -- | From options, create a 'LoggerSpec'.
 toLoggerSpec :: Options -> LoggerSpec
@@ -77,4 +79,7 @@ toLoggerSpec opts =
         Just "stdout" -> StdoutLogger
         Just file     -> FileLogger file
         Nothing       -> NoLogger
+
+toUSec :: Int -> Int
+toUSec n = n * 1000000
 
